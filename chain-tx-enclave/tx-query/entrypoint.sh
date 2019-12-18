@@ -3,9 +3,8 @@ set -e
 
 source /root/.docker_bashrc
 
-echo "[Config] SGX_MODE=${SGX_MODE}"
-echo "[Config] NETWORK_ID=${NETWORK_ID}"
 echo "[Config] TX_QUERY_TIMEOUT=${TX_QUERY_TIMEOUT}"
+echo "[Config] SGX_MODE=${SGX_MODE}"
 
 LD_LIBRARY_PATH=/opt/intel/libsgx-enclave-common/aesm /opt/intel/libsgx-enclave-common/aesm/aesm_service &
 
