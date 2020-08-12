@@ -2,7 +2,7 @@ use crate::group::GroupInfo;
 use crate::key::{HPKEPrivateKey, HPKEPublicKey};
 use crate::keypackage::{KeyPackage, KeyPackageSecret};
 use crate::message::*;
-use crate::utils::{encode_vec_u32, encode_vec_u8_u8, read_vec_u32, read_vec_u8_u8};
+use crate::utils::{encode_vec_u32, encode_vec_u8_u8, read_vec_u32, read_vec_u8_u8, Bytes32};
 use aead::{Aead, NewAead};
 use hkdf::{Hkdf, InvalidLength};
 use hpke::{
@@ -27,7 +27,7 @@ pub enum CipherSuite {
 #[derive(Debug)]
 struct HKDFLabel {
     // 0..255 -- hash of group context
-    pub group_context: Vec<u8>,
+    pub group_context: Bytes32,
     pub length: u16,
     // 7..255 -- prefixed with "mls10 "
     pub label: Vec<u8>,
@@ -37,14 +37,14 @@ struct HKDFLabel {
 
 impl Codec for HKDFLabel {
     fn encode(&self, bytes: &mut Vec<u8>) {
-        encode_vec_u8_u8(bytes, &self.group_context);
+        self.group_context.encode(bytes);
         self.length.encode(bytes);
         encode_vec_u8_u8(bytes, &self.label);
         encode_vec_u32(bytes, &self.context);
     }
 
     fn read(r: &mut Reader) -> Option<Self> {
-        let group_context = read_vec_u8_u8(r)?;
+        let group_context = Bytes32::read(r)?;
         let length = u16::read(r)?;
         let label = read_vec_u8_u8(r)?;
         let context: Vec<u8> = read_vec_u32(r)?;
@@ -83,20 +83,20 @@ impl Codec for ApplicationContext {
 pub trait HkdfExt {
     fn expand_label(
         &self,
-        group_context_hash: Vec<u8>,
+        group_context_hash: Bytes32,
         label: &str,
         context: &[u8],
         length: u16,
     ) -> Result<Vec<u8>, hkdf::InvalidLength>;
     fn derive_secret(
         &self,
-        group_context_hash: Vec<u8>,
+        group_context_hash: Bytes32,
         label: &str,
         length: u16,
     ) -> Result<Vec<u8>, hkdf::InvalidLength>;
     fn derive_app_secret(
         &self,
-        group_context_hash: Vec<u8>,
+        group_context_hash: Bytes32,
         label: &str,
         node: u32,
         generation: u32,
@@ -110,7 +110,7 @@ where
 {
     fn expand_label(
         &self,
-        group_context_hash: Vec<u8>,
+        group_context_hash: Bytes32,
         label: &str,
         context: &[u8],
         length: u16,
@@ -130,7 +130,7 @@ where
 
     fn derive_secret(
         &self,
-        group_context_hash: Vec<u8>,
+        group_context_hash: Bytes32,
         label: &str,
         length: u16,
     ) -> Result<Vec<u8>, InvalidLength> {
@@ -139,7 +139,7 @@ where
 
     fn derive_app_secret(
         &self,
-        group_context_hash: Vec<u8>,
+        group_context_hash: Bytes32,
         label: &str,
         node: u32,
         generation: u32,
@@ -177,7 +177,8 @@ impl CipherSuite {
             CipherSuite::MLS10_128_DHKEMP256_AES128GCM_SHA256_P256 => {
                 let mut csprng = rand::thread_rng();
                 let recip_pk = &kp.payload.init_key;
-                let key_package_hash = self.hash(&kp.get_encoding());
+                // FIXME: Change `key_package_hash` to `Bytes32`
+                let key_package_hash = self.hash(&kp.get_encoding()).to_vec();
                 let (kem_output, mut context) = hpke::setup_sender::<
                     AesGcm128,
                     hpke::kdf::HkdfSha256,
@@ -294,9 +295,9 @@ impl CipherSuite {
     }
 
     /// TODO: use generic array?
-    pub fn hash(self, data: &[u8]) -> Vec<u8> {
+    pub fn hash(self, data: &[u8]) -> Bytes32 {
         match self {
-            CipherSuite::MLS10_128_DHKEMP256_AES128GCM_SHA256_P256 => Sha256::digest(data).to_vec(),
+            CipherSuite::MLS10_128_DHKEMP256_AES128GCM_SHA256_P256 => Bytes32(Sha256::digest(data).into()),
         }
     }
 
@@ -310,7 +311,7 @@ impl CipherSuite {
     pub fn expand_label(
         self,
         secret: &SecretVec<u8>,
-        group_context_hash: Vec<u8>,
+        group_context_hash: Bytes32,
         label: &str,
         context: &[u8],
         length: u16,

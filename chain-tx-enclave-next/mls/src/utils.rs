@@ -1,4 +1,59 @@
+use std::ops::{Deref, DerefMut};
+
 use rustls::internal::msgs::codec::{u24, Codec, Reader};
+use subtle::ConstantTimeEq;
+
+#[derive(Debug, Copy, Clone, Default, PartialOrd, Ord)]
+pub struct Bytes32(pub [u8; 32]);
+
+impl Deref for Bytes32 {
+    type Target = [u8; 32];
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for Bytes32 {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl Codec for Bytes32 {
+    fn encode(&self, bytes: &mut Vec<u8>) {
+        encode_vec_u8_u8(bytes, &self.0)
+    }
+
+    fn read(reader: &mut Reader) -> Option<Self> {
+        let bytes_vec = read_vec_u8_u8(reader)?;
+
+        if bytes_vec.len() != 32 {
+            return None;
+        }
+
+        let mut bytes = [0u8; 32];
+        bytes.copy_from_slice(&bytes_vec);
+
+        Some(Self(bytes))
+    }
+}
+
+/// This implementation is constant-time.
+impl PartialEq for Bytes32 {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.ct_eq(&other.0).into()
+    }
+}
+
+/// This implementation is constant-time.
+impl PartialEq<[u8; 32]> for Bytes32 {
+    fn eq(&self, other: &[u8; 32]) -> bool {
+        self.0.ct_eq(other).into()
+    }
+}
+
+impl Eq for Bytes32 {}
 
 pub fn encode_option<T: Codec>(bytes: &mut Vec<u8>, t: &Option<T>) {
     match t {

@@ -1,5 +1,6 @@
 use crate::ciphersuite::{CipherSuite, HkdfExt};
 use crate::tree_math::{LeafSize, NodeSize};
+use crate::utils::Bytes32;
 use hkdf::Hkdf;
 use secrecy::{ExposeSecret, SecretVec};
 use sha2::digest::{generic_array, BlockInput, FixedOutput, Reset, Update};
@@ -28,7 +29,7 @@ impl<D: BlockInput + FixedOutput + Reset + Update + Default + Clone> TreeBaseKey
 
     pub fn get_base_secret(
         &mut self,
-        group_context_hash: Vec<u8>,
+        group_context_hash: Bytes32,
         sender_leaf: LeafSize,
     ) -> SecretVec<u8> {
         let node_index = NodeSize::from(sender_leaf);
@@ -53,7 +54,7 @@ impl<D: BlockInput + FixedOutput + Reset + Update + Default + Clone> TreeBaseKey
 
             self.secrets[l.node_index()] = Some(SecretVec::new(
                 skdf.derive_app_secret(
-                    group_context_hash.clone(),
+                    group_context_hash,
                     "tree",
                     l.0 as u32,
                     0,
@@ -63,7 +64,7 @@ impl<D: BlockInput + FixedOutput + Reset + Update + Default + Clone> TreeBaseKey
             ));
             self.secrets[r.node_index()] = Some(SecretVec::new(
                 skdf.derive_app_secret(
-                    group_context_hash.clone(),
+                    group_context_hash,
                     "tree",
                     r.0 as u32,
                     0,
@@ -100,7 +101,7 @@ impl HashRatchet {
     /// spec: draft-ietf-mls-protocol.md#encryption-keys
     pub fn next<D: BlockInput + FixedOutput + Reset + Update + Default + Clone>(
         &mut self,
-        group_context_hash: Vec<u8>,
+        group_context_hash: Bytes32,
         cs: CipherSuite,
     ) -> (SecretVec<u8>, Vec<u8>) {
         let app_start_secret = Hkdf::<D>::new(None, self.next_secret.expose_secret());
@@ -110,7 +111,7 @@ impl HashRatchet {
         let key = SecretVec::new(
             app_start_secret
                 .derive_app_secret(
-                    group_context_hash.clone(),
+                    group_context_hash,
                     "key",
                     self.node.0 as u32,
                     self.next_gen,
@@ -120,7 +121,7 @@ impl HashRatchet {
         );
         let nonce = app_start_secret
             .derive_app_secret(
-                group_context_hash.clone(),
+                group_context_hash,
                 "nonce",
                 self.node.0 as u32,
                 self.next_gen,
@@ -168,14 +169,14 @@ impl<D: BlockInput + FixedOutput + Reset + Update + Default + Clone> GroupKeySou
 
     pub fn get_key_nonce(
         &mut self,
-        group_context_hash: Vec<u8>,
+        group_context_hash: Bytes32,
         sender_leaf: LeafSize,
         cs: CipherSuite,
     ) -> (SecretVec<u8>, Vec<u8>) {
         if self.ratchets[sender_leaf.0 as usize].is_none() {
             let base_secret = self
                 .base_secret_source
-                .get_base_secret(group_context_hash.clone(), sender_leaf);
+                .get_base_secret(group_context_hash, sender_leaf);
             self.ratchets[sender_leaf.0 as usize] =
                 Some(HashRatchet::new(NodeSize::from(sender_leaf), base_secret));
         };

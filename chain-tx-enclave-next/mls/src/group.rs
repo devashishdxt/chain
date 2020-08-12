@@ -12,7 +12,7 @@ use crate::tree::*;
 use crate::tree_math::{LeafSize, NodeSize};
 use crate::utils::{
     encode_vec_option_u32, encode_vec_u8_u16, encode_vec_u8_u8, read_vec_option_u32,
-    read_vec_u8_u16, read_vec_u8_u8,
+    read_vec_u8_u16, read_vec_u8_u8, Bytes32
 };
 use ra_client::AttestedCertVerifier;
 use rustls::internal::msgs::codec::{self, Codec, Reader};
@@ -35,7 +35,8 @@ impl GroupAux {
     fn new(context: GroupContext, tree: Tree, kp_secret: KeyPackageSecret) -> Self {
         let secrets: EpochSecrets<Sha256> = match &tree.cs {
             CipherSuite::MLS10_128_DHKEMP256_AES128GCM_SHA256_P256 => {
-                EpochSecrets::new(tree.cs.hash(&context.get_encoding()), tree.leaf_len())
+                // FIXME: Change `EpochSecrets` to use `Bytes32`
+                EpochSecrets::new(tree.cs.hash(&context.get_encoding()).to_vec(), tree.leaf_len())
             }
         };
         GroupAux {
@@ -136,7 +137,7 @@ impl GroupAux {
         }
     }
 
-    fn get_init_confirmed_transcript_hash(&self, sender: Sender, commit: &Commit) -> Vec<u8> {
+    fn get_init_confirmed_transcript_hash(&self, sender: Sender, commit: &Commit) -> Bytes32 {
         let interim_transcript_hash = b"".to_vec(); // TODO
         let content_to_commit = MLSPlaintextCommitContent::new(
             self.context.group_id.clone(),
@@ -153,8 +154,8 @@ impl GroupAux {
         &self,
         commit_confirmation: Vec<u8>,
         commit_msg_sig: Vec<u8>,
-        confirmed_transcript: Vec<u8>,
-    ) -> Vec<u8> {
+        confirmed_transcript: Bytes32,
+    ) -> Bytes32 {
         let commit_auth = MLSPlaintextCommitAuthData {
             confirmation: commit_confirmation,
             signature: commit_msg_sig,
@@ -184,14 +185,14 @@ impl GroupAux {
         updated_group_context: &GroupContext,
         updated_secrets: &EpochSecrets<Sha256>,
         confirmation: Vec<u8>,
-        interim_transcript_hash: Vec<u8>,
+        interim_transcript_hash: Bytes32,
         positions: Vec<(NodeSize, KeyPackage)>,
     ) -> Welcome {
         let group_info_p = GroupInfoPayload {
             group_id: updated_group_context.group_id.clone(),
             epoch: updated_group_context.epoch,
             tree: updated_tree.for_group_info(),
-            confirmed_transcript_hash: updated_group_context.confirmed_transcript_hash.clone(),
+            confirmed_transcript_hash: updated_group_context.confirmed_transcript_hash,
             interim_transcript_hash,
             extensions: updated_group_context.extensions.clone(), // FIXME: gen new keypackage + extension with parent hash?
             confirmation,
@@ -244,7 +245,8 @@ impl GroupAux {
         let mut remove_proposals_ids: Vec<ProposalId> = Vec::new();
         let mut removes: Vec<Remove> = Vec::new();
         for p in proposals.iter() {
-            let proposal_id = ProposalId(self.tree.cs.hash(&p.get_encoding()));
+            // FIXME: Use `Bytes32` in `ProposalId`
+            let proposal_id = ProposalId(self.tree.cs.hash(&p.get_encoding()).to_vec());
             match &p.content.content {
                 ContentType::Proposal(Proposal::Add(add)) => {
                     add_proposals_ids.push(proposal_id);
@@ -332,7 +334,7 @@ impl GroupAux {
         let interim_transcript_hash = self.get_interim_transcript_hash(
             confirmation.clone(),
             signed_commit.signature.clone(),
-            updated_group_context.confirmed_transcript_hash.clone(),
+            updated_group_context.confirmed_transcript_hash,
         );
         (
             signed_commit,
@@ -652,7 +654,7 @@ pub struct GroupContext {
     /// field contains a running hash over
     /// the messages that led to this state.
     /// 0..255
-    pub confirmed_transcript_hash: Vec<u8>,
+    pub confirmed_transcript_hash: Bytes32,
     /// 0..2^16-1
     pub extensions: Vec<ext::ExtensionEntry>,
 }
@@ -712,9 +714,9 @@ pub struct GroupInfoPayload {
     /// FIXME representation may change https://github.com/mlswg/mls-protocol/issues/344
     pub tree: Vec<Option<Node>>,
     /// 0..255
-    pub confirmed_transcript_hash: Vec<u8>,
+    pub confirmed_transcript_hash: Bytes32,
     /// 0..255
-    pub interim_transcript_hash: Vec<u8>,
+    pub interim_transcript_hash: Bytes32,
     /// 0..2^16-1
     pub extensions: Vec<ext::ExtensionEntry>,
     /// 0..255

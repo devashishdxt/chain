@@ -1,6 +1,7 @@
 use crate::astree::GroupKeySource;
 use crate::ciphersuite::HkdfExt;
 use crate::tree_math::LeafSize;
+use crate::utils::Bytes32;
 use hkdf::Hkdf;
 use secrecy::{ExposeSecret, SecretVec};
 use sha2::digest::{generic_array, BlockInput, FixedOutput, Reset, Update};
@@ -30,7 +31,7 @@ impl<D: BlockInput + FixedOutput + Reset + Update + Default + Clone> EpochSecret
 
     pub fn from_epoch_secret(
         epoch_secret: (SecretVec<u8>, Hkdf<D>),
-        group_context_hash: Vec<u8>,
+        group_context_hash: Bytes32,
         leaf_count: LeafSize,
     ) -> Self {
         use generic_array::typenum::Unsigned;
@@ -38,11 +39,11 @@ impl<D: BlockInput + FixedOutput + Reset + Update + Default + Clone> EpochSecret
         let confirmation_key =
             epoch_secret
                 .1
-                .derive_secret(group_context_hash.clone(), "confirm", secret_len);
+                .derive_secret(group_context_hash, "confirm", secret_len);
         let init_secret =
             epoch_secret
                 .1
-                .derive_secret(group_context_hash.clone(), "init", secret_len);
+                .derive_secret(group_context_hash, "init", secret_len);
         let application_secret = SecretVec::new(
             epoch_secret
                 .1
@@ -60,7 +61,7 @@ impl<D: BlockInput + FixedOutput + Reset + Update + Default + Clone> EpochSecret
 
     fn generate(
         init_secret: &SecretVec<u8>,
-        group_context_hash: Vec<u8>,
+        group_context_hash: Bytes32,
         commit_secret: &SecretVec<u8>,
         leaf_count: LeafSize,
     ) -> Self {
@@ -74,18 +75,18 @@ impl<D: BlockInput + FixedOutput + Reset + Update + Default + Clone> EpochSecret
             Hkdf::<D>::extract(Some(&commit_secret.expose_secret()), &derived_secret);
         // FIXME: these are to be used later
         let _sender_data_secret =
-            epoch_secret.derive_secret(group_context_hash.clone(), "sender data", secret_len);
+            epoch_secret.derive_secret(group_context_hash, "sender data", secret_len);
         let _handshake_secret =
-            epoch_secret.derive_secret(group_context_hash.clone(), "handshake", secret_len);
+            epoch_secret.derive_secret(group_context_hash, "handshake", secret_len);
         let _exporter_secret =
-            epoch_secret.derive_secret(group_context_hash.clone(), "exporter", secret_len);
+            epoch_secret.derive_secret(group_context_hash, "exporter", secret_len);
         let application_secret = SecretVec::new(
             epoch_secret
-                .derive_secret(group_context_hash.clone(), "app", secret_len)
+                .derive_secret(group_context_hash, "app", secret_len)
                 .expect("valid secret"),
         );
         let confirmation_key =
-            epoch_secret.derive_secret(group_context_hash.clone(), "confirm", secret_len);
+            epoch_secret.derive_secret(group_context_hash, "confirm", secret_len);
         let init_secret = epoch_secret.derive_secret(group_context_hash, "init", secret_len);
         Self {
             init_secret: SecretVec::new(init_secret.expect("valid secret")),
@@ -127,7 +128,7 @@ impl<D: BlockInput + FixedOutput + Reset + Update + Default + Clone> EpochSecret
     pub fn generate_new_epoch_secrets(
         &self,
         commit_secret: &SecretVec<u8>,
-        updated_group_context_hash: Vec<u8>,
+        updated_group_context_hash: Bytes32,
         leaf_count: LeafSize,
     ) -> Self {
         Self::generate(
